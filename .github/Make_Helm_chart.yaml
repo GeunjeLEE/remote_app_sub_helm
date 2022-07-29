@@ -1,0 +1,49 @@
+name: "Make Helm Chart"
+on:
+  workflow_dispatch:
+
+jobs:
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          ref: ${{ env.BRANCH }}
+      - name: Install Helm
+        uses: azure/setup-helm@v1
+        with:
+          version: '3.4.0'
+      - name: Run Helm packaging
+        run: |
+          export cache_dir=/tmp/helm
+          mkdir -p "$cache_dir"
+          echo "Installing chart-releaser..."
+          curl -sSLo cr.tar.gz "https://github.com/helm/chart-releaser/releases/download/v1.2.0/chart-releaser_1.2.0_linux_amd64.tar.gz"
+          tar -xzf cr.tar.gz -C "$cache_dir"
+          rm -f cr.tar.gz
+          echo 'Adding cr directory to PATH...'
+          export PATH="$cache_dir:$PATH"
+          rm -rf .deploy
+          echo 'Print Version ...'
+          export SERVICE=$(echo ${{ github.repository }} | cut -d '/' -f2)
+          echo 'Update helm version in chart.yaml and values.yaml'
+          echo "SERVICE=${SERVICE}" >> $GITHUB_ENV
+          helm package deploy/helm --destination .deploy
+          cr upload -o GeunjeLEE -r remote_app_helm -p .deploy --token ${{ secrets.PAT_TOKEN }}
+          cr index -i ./index.yaml -p .deploy/ -o GeunjeLEE -r remote_app_helm -c https://GeunjeLEE.github.io/remote_app_helm --token ${{ secrets.PAT_TOKEN }}
+          cp index.yaml /tmp/index.yaml
+      - name: Check out chart repo
+        uses: actions/checkout@master
+        with:
+          repository: GeunjeLEE/remote_app_helm
+          ref: gh-pages
+          token: ${{ secrets.PAT_TOKEN }}
+      - name: Update Helm repository index.yaml
+        run: |
+          git config --global user.email nigasa12@gmail.com
+          git config --global user.name GeunjeLEE
+          cp /tmp/index.yaml ./
+          git add index.yaml
+          git pull
+          git commit -m "Add ${SERVICE} chart"
+          git push origin gh-pages
